@@ -1,0 +1,136 @@
+import display from '@ohos.display';
+import { Size} from '../../RNOH'
+import { Descriptor} from '../../RNOH/DescriptorBase';
+import { Tag } from '../../RNOH/DescriptorBase'
+import { RNOHContext } from '../../RNOH/RNOHContext'
+import { ViewBaseProps } from './RNViewBase'
+import { TouchDispatcher } from '../../RNOH/TouchDispatcher'
+import { RNModalHostViewManager } from '../componentManagers/RNModalHostViewManager';
+import { CustomComponentBuilder } from './RNComponentFactory'
+import { RNComponentFactory, buildRNComponent } from './RNComponentFactory'
+
+interface ModalHostViewProps extends ViewBaseProps {
+  transparent: boolean;
+  visible: boolean;
+  identifier: number;
+};
+interface ModalHostViewState {
+  screenSize: Size
+};
+type ModalHostViewDescriptor = Descriptor<"ModalHostView", ModalHostViewProps, ModalHostViewState>;
+
+function closeTo(a: number, b: number) {
+  return Math.abs(a - b) < 0.1
+}
+
+@CustomDialog
+struct ModalHostViewDialog {
+  public ctx: RNOHContext = {} as RNOHContext
+  public tag: Tag = -1
+  @Builder
+  defaultBuilder() {
+  }
+  @BuilderParam public buildCustomComponent: CustomComponentBuilder = this.defaultBuilder
+  @State descriptor: ModalHostViewDescriptor = Object() as ModalHostViewDescriptor
+  controller: CustomDialogController = new CustomDialogController({
+    builder: this,
+    alignment: DialogAlignment.TopStart,
+    customStyle: true,
+    maskColor: Color.Transparent
+  })
+  @State showContent: boolean = false
+  unsubscribeFromDescriptorChanges: () => void | undefined = () => {}
+  private cleanUpCallbacks: (() => void)[] = []
+  touchDispatcher: TouchDispatcher = new TouchDispatcher(this.tag, this.ctx.rnInstance, this.ctx.logger);
+  componentManager: RNModalHostViewManager = new RNModalHostViewManager(this.tag, this.ctx);
+
+  emitComponentEvent(eventName: string) {
+    this.ctx.rnInstanceManager.emitComponentEvent(this.tag, eventName, {});
+  }
+
+  aboutToAppear() {
+    this.emitComponentEvent("onShow")
+    this.componentManager = new RNModalHostViewManager(this.tag, this.ctx);
+    this.ctx.componentManagerRegistry.registerComponentManager(this.tag, this.componentManager);
+    this.descriptor = this.ctx.descriptorRegistry.getDescriptor<ModalHostViewDescriptor>(this.tag)
+    this.unsubscribeFromDescriptorChanges = this.ctx.descriptorRegistry.subscribeToDescriptorChanges(this.tag, (descriptor) => {
+      this.descriptor = (descriptor as ModalHostViewDescriptor)
+      // NOTE: this should ensure we only update the Stack's dimensions
+      // after React rerenders the contents,
+      // to prevent flickering when opening the modal
+      this.showContent = true
+    })
+    this.touchDispatcher = new TouchDispatcher(this.tag, this.ctx.rnInstance, this.ctx.logger);
+
+    const displayClass = display.getDefaultDisplaySync();
+    const height = px2vp(displayClass.height);
+    const width = px2vp(displayClass.width);
+    this.ctx.descriptorRegistry.setState<ModalHostViewState>(this.tag, { screenSize: { height, width } });
+  }
+
+  aboutToDisappear() {
+    this.emitComponentEvent("onRequestClose")
+    this.unsubscribeFromDescriptorChanges?.()
+    this.cleanUpCallbacks.forEach(cb => cb())
+  }
+
+  build() {
+    if (this.showContent) {
+      Stack() {
+        if (this.ctx.rnInstance.isFeatureFlagEnabled("USE_BUILD_RN_COMPONENT")) {
+          ForEach(this.descriptor.childrenTags, (childrenTag: Tag) => {
+            buildRNComponent(this.ctx, this.ctx.descriptorRegistry.findDescriptorWrapperByTag(childrenTag)!)
+          }, (childrenTag: Tag) => childrenTag.toString())
+        } else {
+          ForEach(this.descriptor.childrenTags, (childrenTag: Tag) => {
+            RNComponentFactory({ ctx: this.ctx, tag: childrenTag, buildCustomComponent: this.buildCustomComponent })
+          }, (childrenTag: Tag) => childrenTag.toString())
+        }
+      }.onTouch((touchEvent) => this.touchDispatcher.handleTouchEvent(touchEvent))
+    }
+  }
+}
+
+@Component
+export struct RNModalHostView {
+  public ctx: RNOHContext = {} as RNOHContext
+  public tag: number = 0
+  @Builder
+  defaultBuilder() {
+  }
+  @BuilderParam public buildCustomComponent: CustomComponentBuilder = this.defaultBuilder
+  private dialogController: CustomDialogController = new CustomDialogController({
+    builder: ModalHostViewDialog({
+      ctx: this.ctx,
+      tag: this.tag,
+      buildCustomComponent: this.buildCustomComponent
+    }),
+    alignment: DialogAlignment.TopStart,
+    customStyle: true,
+    maskColor: Color.Transparent
+  })
+
+  aboutToAppear() {
+    this.dialogController = new CustomDialogController({
+      builder: ModalHostViewDialog({
+        ctx: this.ctx,
+        tag: this.tag,
+        buildCustomComponent: this.buildCustomComponent
+      }),
+      alignment: DialogAlignment.TopStart,
+      customStyle: true,
+      maskColor: Color.Transparent
+    })
+
+    // on the JS side, the native ModalHostView is rendered _only_ if the `visible` prop is set to true,
+    // so we can completely ignore it and just open/close when this component appears/disappears
+    this.dialogController.open()
+  }
+
+  aboutToDisappear() {
+    this.dialogController?.close()
+  }
+
+  build() {
+  }
+}

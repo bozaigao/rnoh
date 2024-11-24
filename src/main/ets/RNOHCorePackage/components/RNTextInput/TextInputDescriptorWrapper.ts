@@ -1,0 +1,55 @@
+import { convertColorValueToRGBA, Descriptor, Point } from '../../../RNOH/ts';
+import { ViewDescriptorWrapperBase } from '../RNViewBase/ViewDescriptorWrapper';
+import { TextInputProps, TextInputRawProps, TextInputState } from './types';
+
+
+export class TextInputDescriptorWrapper extends ViewDescriptorWrapperBase<string, TextInputProps, TextInputState, TextInputRawProps> {
+  constructor(descriptor: Descriptor<string, TextInputProps, TextInputState, TextInputRawProps>) {
+    super(descriptor)
+  }
+
+  public get position(): Point {
+    return {
+      x: this.padding.left.asNumber(),
+      y: this.padding.top.asNumber(),
+    }
+  }
+
+  public get contentWidth(): number {
+    return this.width - (this.padding.left.asNumber() + this.padding.right.asNumber())
+  }
+
+  public get contentHeight(): number {
+    return this.height - (this.padding.top.asNumber() + this.padding.bottom.asNumber())
+  }
+
+  public get fontWeight(): number | undefined {
+    return this.rawProps.fontWeight;
+  }
+
+  public get fontFamily(): string | undefined {
+    return this.rawProps.fontFamily;
+  }
+
+  public get fontSize(): string | number | undefined {
+    const pixelUnit = this.rawProps.allowFontScaling ? 'fp' : 'vp';
+    const size = this.rawProps.fontSize;
+    return size ? `${size}${pixelUnit}` : size;
+  }
+
+  public get fontColor(): string {
+    return convertColorValueToRGBA(this.rawProps.color, '#FF000000');
+  }
+
+  public get fontStyle(): string {
+    return this.rawProps.fontStyle;
+  }
+
+  public get autoFocus(): boolean {
+    return this.rawProps.autoFocus ?? false;
+  }
+
+  public get clearTextOnFocus(): boolean {
+    return this.rawProps.clearTextOnFocus ?? false;
+  }
+}
